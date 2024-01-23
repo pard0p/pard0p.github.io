@@ -1,55 +1,88 @@
 ---
 title: Indirect Syscalls + CallStack Spoofing
-date: 2024-01-22 20:18:00 +0800
+date: 2024-01-23 20:18:00 +0800
 categories: [Malware, Evasion]
 tags: [POC]
 ---
 
-## <u>Syscalls Indirectas</u>
+<style>
+    h1 {
+        font-size: 50px;
+    }
 
-Esta técnica aparece a modo de alternativa de las Syscalls directas. Tal y como se indica en DirectSyscalls, uno de los problemas principales en este ámbito es el uso de instrucciones Syscall desde código del propio ejecutable o módulos no verificados.
+    h2 {
+        font-weight:700;
+        font-size: 35px;
+        color: #DDA0DD;
+    }
 
-Para solventar esto aparece el uso de Syscalls Indirectas. Esta técnica consiste en aprovechar las instrucciones Syscalls encontradas en la ntdll.dll para ejecutar el SSN que nosotros queramos.
+    h3 {
+        font-weight:700;
+        font-size: 25px;
+        color: #DDA0DD;
+    }
 
-Tomando como referencia el ejemplo de DirectSyscalls, para aplicar esta técnica sería tan sencillo como sustituir la instrucción Syscall por un salto a la ntdll.dll. Justo donde se encuentre la combinación de instrucciones Syscall + Return.
+    h4 {
+        font-weight:400;
+        font-size: 25px;
+        color: #DDA0DD;
+    }
+
+    .content {
+        font-size: 22px;
+        text-align: justify;
+    }
+</style>
+
+## Syscalls Indirectas
+
+Esta técnica aparece a modo de alternativa de las Syscalls directas. Tal y como indico en [este otro post](https://pard0p.github.io/posts/direct-syscalls/), uno de los problemas principales de su uso es el la aparición de instrucciones Syscall en el código del propio ejecutable o en módulos no verificados. Sin embargo, para tratar de solventar esto, aparecen las **Syscalls indirectas**.
+
+Esta otra técnica consiste en aprovechar las instrucciones Syscalls **encontradas en la ntdll.dll** para ejecutar el número de la Syscall (SSN) que nosotros queramos. Tomando como referencia lo visto en [este post](https://pard0p.github.io/posts/direct-syscalls/), para aplicar esta técnica sería tan sencillo como sustituir la instrucción Syscall por un salto a la ntdll.dll. Justo donde se encontraría la combinación de instrucciones *Syscall + Return*.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img1.png)
 
-De esta manera, como se observa en la imagen, se estaría ejecutando la Syscall en el espacio de memoria de la ntdll.dll en lugar del de "mi_code.exe".
+Observando el esquema en la imagen anterior, podemos ver de manera aproximada como debería de ejecutarse esta técnica. Se estaría ejecutando la Syscall en el espacio de memoria de la ntdll.dll en lugar del de "mi_code.exe", con lo que estaríamos evadiendo la medida de seguridad comentada anteriormente.
 
 ### <u>Problemas</u>
 
-Tal y como comenta el creador de Brute Ratel en su blog ([https://0xdarkvortex.dev/hiding-in-plainsight/](https://0xdarkvortex.dev/hiding-in-plainsight/)), el uso de Syscalls Indirectas en su forma más básica no funciona a día de hoy.
+Tal y como comenta uno de los creadores de Brute Ratel en su blog ([https://0xdarkvortex.dev/hiding-in-plainsight/](https://0xdarkvortex.dev/hiding-in-plainsight/)), el uso de Syscalls irectas en su forma básica ha quedado obsoleto.
 
-Los avanzados mecanismos de detección han simplificado considerablemente la identificación de los IndirectSyscalls. Esto se debe a que, a través del seguimiento de eventos (ETW), un EDR puede identificar la ejecución de una Syscall y luego verificar la forma en que se está llevando a cabo. Si un EDR detecta la ejecución de una Syscall específica en una región de memoria donde no debería o si se encuentra una CallStack inválida durante su ejecución, el EDR podría tomar medidas correspondientes, como detener la ejecución del código en cuestión.
+Los avanzados mecanismos de detección han simplificado considerablemente la identificación de la Syscalls indirectas. Esto se debe a que, **a través del seguimiento de eventos** (ETW), un EDR puede identificar la ejecución de una Syscall y luego verificar la forma en que se está llevando a cabo. Si un EDR detecta la ejecución de una Syscall específica en una región de memoria donde no debería o si se encuentra una **CallStack inválida** durante su ejecución, el EDR podría tomar cartas en el asunto y detener la ejecución del código en cuestión.
 
 Por ende, resulta complicado implementar este tipo de técnicas frente a estos mecanismos.
 
-## <u>Callstack Spoofing</u>
+## Callstack Spoofing
 
-A modo de un pequeño parche en la ejecución de Syscalls de forma indirecta, mi propuesta es la de ocultar o realizar un spoofing de la CallStack. De esta manera, estaríamos evadiendo los mecanismos de detección que traten de validar la CallStack ante la ejecución de determinadas Syscalls.
+![img-description](/assets/img/indirect-syscalls-poc/img15.jpg)
+
+A modo de un pequeño parche en la ejecución de Syscalls de forma indirecta, mi propuesta es la de **ocultar la CallStack** mediante un spoofing. De esta manera, estaríamos evadiendo los mecanismos de detección que traten de validar la CallStack ante la ejecución de determinadas Syscalls.
+
+Considero que esta es una de las **claves** para entender este post, por lo que tómate tu tiempo. Si esto es algo nuevo para ti o si no tienes mucho conocimiento sobre assembly, te recomiendo que aproveches para refrescar conceptos y avanzar poco a poco 🤓.
 
 ### <u>Funcionamiento</u>
 
-Para simplificar el funcionamiento de un CallStack Spoofing, considero que se deben producir estos tres pasos como mínimo:
+Para simplificar un poco el funcionamiento de un CallStack Spoofing con la finalidad de ejecutar Syscalls indirectas, considero que se deben producir estos tres pasos como mínimo:
 
 1. <b>Alterar el Stack</b>. Realizar los cambios en el Stack para falsificar u ocultar aquello que se desee en la CallStack (en este caso el return a nuestro código código).
 2. <b>Ejecutar la Syscall</b>. Realizar los pasos necesarios para ejecutar la Syscall de forma indirecta.
 3. <b>Recuperar el control</b>. Recuperar otra vez el control del flujo de la ejecución devolviendo el Stack a su estado original o correcto.
 
-Una forma no muy compleja de realizar esto podría ser guardando la dirección de retorno en un registro no volátil y regresar a nuestro código mediante un gadjet ROP en una DLL del sistema.
+Una forma no muy compleja de realizar esto podría ser guardando la dirección de retorno en un registro no volátil y regresar a nuestro código mediante un **gadjet ROP** en una DLL del sistema.
 
-Esto se podría realizar mediante una rutina trampolín que modificase el stack, preparase la pila y realizase el salto correspondiente.
+Esto se podría realizar mediante una **rutina trampolín que modificase el stack, preparase la pila y realizase el salto correspondiente**.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img2.png)
 
-## <u>Windows Thread Pooling</u>
+## Windows Thread Pooling
 
-El Windows Thread Pooling es mecanismo proporcionado por Windows para gestionar y optimizar el uso de hilos en una aplicación. Este mecanismo ayuda a evitar la creación y destrucción excesiva de hilos, mejorando así la eficiencia y el rendimiento de las aplicaciones que necesitan realizar tareas concurrentes.
+Otro sistema importante del que hago uso en esta POC es el Windows Thread Pooling, que es un mecanismo proporcionado por Windows para gestionar y optimizar el uso de hilos en una aplicación. Gracias a él se ayuda a la creación y destrucción excesiva de hilos, mejorando así la eficiencia y el rendimiento de las aplicaciones que necesitan realizar tareas concurrentes.
 
 En lugar de crear un nuevo hilo cada vez que se necesita, la agrupación de hilos mantiene un conjunto de hilos reutilizables que pueden asignarse de forma dinámica entre las tareas que lo requieran. Estos hilos preexistentes se almacenan en una "pool", y cuando una tarea está lista para ejecutarse, se asigna uno de los hilos del pool para llevar a cabo esa tarea.
 
-Para poder trabajar con este sistema podemos emplear las funciones TpAllocWork, TpPostWork y TpReleaseWork de la NTDLL.
+![img-description](/assets/img/indirect-syscalls-poc/img16.png)
+
+Para poder trabajar con este sistema debemos emplear las funciones **TpAllocWork, TpPostWork y TpReleaseWork** de la NTDLL.
 
 ```c++
 #include <windows.h>
@@ -99,41 +132,41 @@ int main() {
 
 ### <u>Callstack de un hilo normal VS hilo de la Windows Thread Pooling</u>
 
-Si observamos la ejecución normal de la función Test podemos ver que nuestro código se ejecuta en un solo hilo.
+Si observamos la **ejecución normal de la función *Test*** podemos ver que nuestro código se ejecuta en un solo hilo.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img3.png)
 
-Por lo tanto, la CallStack de este hilo contiene varios returns a nuestro código "malicious.exe" ya que internamente se ha pasado por varias funciones: main, Test, etc.
+Por lo tanto, la CallStack de este hilo contendría varios returns de vuelta nuestro código en "malicious.exe" ya que internamente se ha debido de pasado por varias funciones: main, Test, etc.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img4.png)
 
-Sin embargo, cuando ejecutamos la función Test en un hilo de la Windows Thread Pooling, la CallStack es diferente. Únicamente aparece un return hacia nuestro código "malicious.exe".
+Sin embargo, cuando **ejecutamos la función *Test* en un hilo de la Windows Thread Pooling**, la CallStack es diferente. Únicamente aparece un return hacia nuestro código "malicious.exe".
 
 ![img-description](/assets/img/indirect-syscalls-poc/img5.png)
 
-Esto se debe a que la función Test estaría funcionando como callback del hilo. Es decir, cuando se cree el hilo se ejecutará única y exclusivamente la función que nosotros hayamos indicado. Por lo tanto, el hilo al ser iniciado por el sistema, se estaría saltando funciones o rutinas por las que en el caso anterior se tiene que pasar para ejecutar la función de Test.
+Esto se debe a que la función *Test* estaría funcionando como **callback del hilo**. Es decir, cuando se cree el hilo se ejecutará única y exclusivamente la función que nosotros hayamos indicado. Por lo tanto, el hilo al ser iniciado por el sistema, se estaría saltando funciones o rutinas por las que en el caso anterior se tiene que pasar llegar a ejecutar la función de *Test*.
 
-## <u>Mi POC</u>
+## Mi POC
 
-Teniendo en cuenta el funcionamiento de un CallStack Spoofing y la CallStack de un hilo la Windows Thread Polling he desarrollado una POC en la que se junten estos conceptos para lograr ejecutar una Syscall indirecta de una forma no muy compleja.
+Teniendo en cuenta el funcionamiento de un CallStack Spoofing y la CallStack que tendría un hilo la Windows Thread Polling he desarrollado una POC en la que se junten estos conceptos para lograr ejecutar una Syscall indirecta de una forma no muy compleja (en comparación a otros métodos).
 
 ### <u>Funcionamiento</u>
 
-Los pasos que debe seguir nuestro programa son:
+Los pasos que debería seguir nuestro programa son:
 
 #### 1 - Buscar el ROP gadjet
 
-Encontrar un gadjet en la NTDLL que permita reducir el tamaño de la pila y devolverla a su estado original.
+**Encontrar un gadjet en la NTDLL** que nos permita devolver su estado original a la pila. En mi caso me interesa reducir su tamaño.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img6.png)
 
 #### 2 - Crear un hilo
 
-Crear un hilo mediante la Windows Thread Polling, empleando las funciones TpAllocWork, TpPostWork y TpReleaseWork de la NTDLL. Que ejecutará como callback nuestra rutina en ensamblador.
+Crear un hilo mediante la Windows Thread Polling, empleando las funciones TpAllocWork, TpPostWork y TpReleaseWork de la NTDLL. Que ejecutará como callback nuestra rutina principal de ensamblador.
 
 #### 3 - Alterar el stack
 
-Una vez creado el hilo se ejecutará nuestra rutina en ensamblador. Desde ella se incrementará el tamaño del StackFrame, se introducirán los parámetros necesarios para ejecutar la Syscall y se introducirá la dirección del gadjet como la de return.
+Una vez creado el hilo se ejecutará nuestra rutina en ensamblador. Desde ella se incrementará el tamaño del StackFrame, se introducirán los parámetros necesarios para ejecutar la Syscall y se establecerá la dirección del gadjet como la de return.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img7.png)
 
@@ -141,7 +174,7 @@ Una vez creado el hilo se ejecutará nuestra rutina en ensamblador. Desde ella s
 
 #### 4 - Ejecutar la Syscall indirecta
 
-Desde esta misma rutina de ensamblador se realizará un salto a una de las Syscalls de la NTDLL.
+Desde esta misma rutina de ensamblador se realizará un **salto a una de las Syscalls de la NTDLL**.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img9.png)
 
@@ -151,7 +184,7 @@ Desde esta misma rutina de ensamblador se realizará un salto a una de las Sysca
 
 #### 5 - Return al ROP gadjet
 
-Tras ejecutar la instrucción Syscall se ejecutará el return, el cual realizará un salto hasta la dirección del gadjet. Tras esto, se devolverá el estado original al Stack y se realizará un return de vuelta a nuestro programa.
+Tras ejecutar la instrucción Syscall se ejecutará el **return**, el cual realizará un "salto" **a la dirección de nuestro gadjet**. Tras esto, se devolverá el estado original al Stack y se realizará un return de vuelta a nuestro programa.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img12.png)
 
@@ -163,11 +196,11 @@ Por último, se continuará con la ejecución normal del hilo y este terminará 
 
 ### <u>Observaciones</u>
 
-Como puede observarse, en el momento en el que se ejecuta la Syscall el CallStack aparece de la siguiente manera.
+Como podemos observar, en el momento en el que se ejecuta la Syscall el CallStack aparece de la siguiente manera.
 
 ![img-description](/assets/img/indirect-syscalls-poc/img14.png)
 
-Siendo el 0 la dirección de la función que aprovechamos para ejecutar la Syscall y el 1 la dirección donde se encuentra el gadjet. De esta manera no habría rastro de nuestro código en la CallStack.
+Siendo el 0 la dirección de la función que aprovechamos para ejecutar la Syscall y el 1 la dirección donde se encuentra el gadjet. De esta manera no habría rastro de nuestro código en la CallStack y lograríamos evadir los mecanismos de seguridad que la validan.
 
 ```c++
 #include <windows.h>
@@ -320,5 +353,5 @@ Search_For_Add_Rsp_Ret:
     mov [r15], rdx
     ret
 ```
-
-El código completo puedes encontrarlo en [mi GitHub](https://github.com/pard0p/CallstackSpoofingPOC)
+> El código completo puedes encontrarlo en [mi GitHub](https://github.com/pard0p/CallstackSpoofingPOC)
+{: .prompt-info }
