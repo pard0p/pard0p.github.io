@@ -46,7 +46,7 @@ Observando el esquema en la imagen anterior, podemos ver de manera aproximada co
 
 ### <u>Problemas</u>
 
-Tal y como comenta uno de los creadores de Brute Ratel en su blog ([https://0xdarkvortex.dev/hiding-in-plainsight/](https://0xdarkvortex.dev/hiding-in-plainsight/)), el uso de Syscalls irectas en su forma básica ha quedado obsoleto.
+Tal y como comenta uno de los creadores de Brute Ratel en su blog ([https://0xdarkvortex.dev/hiding-in-plainsight/](https://0xdarkvortex.dev/hiding-in-plainsight/)), el uso de Syscalls directas en su forma básica ha quedado obsoleto.
 
 Los avanzados mecanismos de detección han simplificado considerablemente la identificación de la Syscalls indirectas. Esto se debe a que, **a través del seguimiento de eventos** (ETW), un EDR puede identificar la ejecución de una Syscall y luego verificar la forma en que se está llevando a cabo. Si un EDR detecta la ejecución de una Syscall específica en una región de memoria donde no debería o si se encuentra una **CallStack inválida** durante su ejecución, el EDR podría tomar cartas en el asunto y detener la ejecución del código en cuestión.
 
